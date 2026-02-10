@@ -8,6 +8,7 @@ from geoip2 import database
 from geoip2.errors import AddressNotFoundError
 
 DB_PATH = "GeoLite2-City.mmdb"
+ASN_DB_PATH = "GeoLite2-ASN.mmdb"
 TRUST_PROXY_CIDRS = os.getenv("TRUST_PROXY_CIDRS", "")
 TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "").strip().lower()
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", "")
@@ -17,8 +18,10 @@ app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
 
 _reader = None
+_asn_reader = None
 _reader_lock = Lock()
 _db_missing_logged = False
+_asn_db_missing_logged = False
 _trusted_proxy_networks = []
 
 
@@ -98,6 +101,32 @@ def _get_reader():
             return None
 
 
+def _get_asn_reader():
+    global _asn_reader
+    global _asn_db_missing_logged
+
+    if _asn_reader is not None:
+        return _asn_reader
+
+    with _reader_lock:
+        if _asn_reader is not None:
+            return _asn_reader
+
+        if not os.path.exists(ASN_DB_PATH):
+            if not _asn_db_missing_logged:
+                app.logger.error("ASN GeoIP database not found at path: %s", ASN_DB_PATH)
+                _asn_db_missing_logged = True
+            return None
+
+        try:
+            _asn_reader = database.Reader(ASN_DB_PATH)
+            app.logger.info("ASN GeoIP database loaded from %s", ASN_DB_PATH)
+            return _asn_reader
+        except Exception:
+            app.logger.exception("Failed to initialize ASN GeoIP reader from %s", ASN_DB_PATH)
+            return None
+
+
 def _extract_client_ip():
     if request.args.get("ip"):
         return request.args.get("ip", "").strip()
@@ -162,6 +191,20 @@ def lookup_ip():
 
     try:
         result = reader.city(ip_value)
+        asn_reader = _get_asn_reader()
+        isp_name = None
+        asn_number = None
+        asn_org = None
+        if asn_reader is not None:
+            try:
+                asn = asn_reader.asn(ip_value)
+                asn_number = asn.autonomous_system_number
+                asn_org = asn.autonomous_system_organization
+                isp_name = asn.autonomous_system_organization
+            except AddressNotFoundError:
+                pass
+            except Exception:
+                app.logger.exception("Unhandled error during ASN lookup")
         return (
             jsonify(
                 {
@@ -172,6 +215,9 @@ def lookup_ip():
                     "latitude": result.location.latitude,
                     "longitude": result.location.longitude,
                     "timezone": result.location.time_zone,
+                    "isp": isp_name,
+                    "asn": asn_number,
+                    "asn_org": asn_org,
                 }
             ),
             200,
@@ -195,6 +241,7 @@ def internal_server_error(_):
 
 # Warm the reader at startup to surface DB availability issues early.
 _get_reader()
+_get_asn_reader()
 _trusted_proxy_networks = _load_trusted_proxy_networks()
 
 
