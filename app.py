@@ -1,3 +1,4 @@
+import hmac
 import ipaddress
 import logging
 import os
@@ -9,6 +10,7 @@ from geoip2.errors import AddressNotFoundError
 
 DB_PATH = "GeoLite2-City.mmdb"
 ASN_DB_PATH = "GeoLite2-ASN.mmdb"
+API_ACCESS_KEY = os.getenv("API_ACCESS_KEY", "").strip()
 TRUST_PROXY_CIDRS = os.getenv("TRUST_PROXY_CIDRS", "")
 TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "").strip().lower()
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", "")
@@ -22,6 +24,7 @@ _asn_reader = None
 _reader_lock = Lock()
 _db_missing_logged = False
 _asn_db_missing_logged = False
+_api_key_missing_logged = False
 _trusted_proxy_networks = []
 
 
@@ -171,6 +174,28 @@ def _validate_ip(raw_ip):
         return str(ipaddress.ip_address(raw_ip))
     except ValueError:
         return None
+
+
+@app.before_request
+def enforce_api_access_key():
+    global _api_key_missing_logged
+
+    if request.endpoint in {"health", "static"} or request.endpoint is None:
+        return None
+
+    if not API_ACCESS_KEY:
+        if not _api_key_missing_logged:
+            app.logger.error(
+                "API_ACCESS_KEY is not configured; denying protected API requests."
+            )
+            _api_key_missing_logged = True
+        return jsonify({"error": "API access key is not configured on the server."}), 503
+
+    provided_key = request.headers.get("X-API-Key", "").strip()
+    if not provided_key or not hmac.compare_digest(provided_key, API_ACCESS_KEY):
+        return jsonify({"error": "Unauthorized. Missing or invalid API key."}), 401
+
+    return None
 
 
 @app.route("/health", methods=["GET"])
