@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python - <<'PY'
 import json
 import sys
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 api_url = "https://api.github.com/repos/P3TERX/GeoLite.mmdb/releases/latest"
@@ -26,25 +27,19 @@ tag = data.get("tag_name")
 if not tag:
     sys.exit("Could not determine latest GeoLite.mmdb tag")
 
-print(tag)
-PY
+base = f"https://github.com/P3TERX/GeoLite.mmdb/releases/download/{tag}"
+targets = {
+    "GeoLite2-City.mmdb": "/app/GeoLite2-City.mmdb",
+    "GeoLite2-ASN.mmdb": "/app/GeoLite2-ASN.mmdb",
+}
 
-RUN LATEST_TAG=$(python - <<'PY'
-import json
-from urllib.request import Request, urlopen
-
-api_url = "https://api.github.com/repos/P3TERX/GeoLite.mmdb/releases/latest"
-req = Request(api_url, headers={"Accept": "application/vnd.github+json"})
-with urlopen(req, timeout=30) as response:
-    data = json.load(response)
-print(data.get("tag_name", ""))
+for name, out_path in targets.items():
+    url = f"{base}/{name}"
+    with urlopen(url, timeout=60) as response:
+        content = response.read()
+    Path(out_path).write_bytes(content)
+    print(f"Downloaded {name} from {url}")
 PY
-) \
-    && if [ -z "$LATEST_TAG" ]; then echo "Missing latest tag"; exit 1; fi \
-    && curl -fsSL "https://github.com/P3TERX/GeoLite.mmdb/releases/download/${LATEST_TAG}/GeoLite2-City.mmdb" \
-        -o /app/GeoLite2-City.mmdb \
-    && curl -fsSL "https://github.com/P3TERX/GeoLite.mmdb/releases/download/${LATEST_TAG}/GeoLite2-ASN.mmdb" \
-        -o /app/GeoLite2-ASN.mmdb
 
 COPY app.py .
 
