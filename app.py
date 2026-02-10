@@ -9,6 +9,9 @@ from geoip2.errors import AddressNotFoundError
 
 DB_PATH = "GeoLite2-City.mmdb"
 TRUST_PROXY_CIDRS = os.getenv("TRUST_PROXY_CIDRS", "")
+TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "").strip().lower()
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", "")
+RENDER_ENV = os.getenv("RENDER", "").strip().lower()
 
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
@@ -56,6 +59,12 @@ def _is_trusted_proxy(remote_ip):
     if remote_ip is None:
         return False
 
+    if TRUST_PROXY_HEADERS in {"1", "true", "yes", "on"}:
+        return True
+
+    if RENDER_ENV in {"1", "true", "yes", "on"} or RENDER_EXTERNAL_URL:
+        return True
+
     for network in _trusted_proxy_networks:
         if remote_ip in network:
             return True
@@ -100,6 +109,10 @@ def _extract_client_ip():
         cf_ip = _parse_ip(request.environ.get("HTTP_CF_CONNECTING_IP", ""))
         if cf_ip is not None:
             return str(cf_ip)
+
+        x_real_ip = _parse_ip(request.environ.get("HTTP_X_REAL_IP", ""))
+        if x_real_ip is not None:
+            return str(x_real_ip)
 
         xff = request.environ.get("HTTP_X_FORWARDED_FOR", "").strip()
         if xff:
