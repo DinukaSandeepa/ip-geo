@@ -22,12 +22,12 @@ Requires `X-API-Key` request header.
 **Response**
 ```json
 {
-  "ip": "223.224.30.238",
+  "ip": "223.xxx.xx.xxx",
   "country": "Sri Lanka",
   "city": "Colombo",
   "iso_code": "LK",
-  "latitude": 6.8833,
-  "longitude": 79.85,
+  "latitude": 4.8133,
+  "longitude": 89.85,
   "timezone": "Asia/Colombo",
   "isp": "Example ISP",
   "asn": 12345,
