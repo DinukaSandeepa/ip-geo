@@ -12,34 +12,10 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN python - <<'PY'
-import json
-import sys
-from pathlib import Path
-from urllib.request import Request, urlopen
-
-api_url = "https://api.github.com/repos/P3TERX/GeoLite.mmdb/releases/latest"
-req = Request(api_url, headers={"Accept": "application/vnd.github+json"})
-with urlopen(req, timeout=30) as response:
-    data = json.load(response)
-
-tag = data.get("tag_name")
-if not tag:
-    sys.exit("Could not determine latest GeoLite.mmdb tag")
-
-base = f"https://github.com/P3TERX/GeoLite.mmdb/releases/download/{tag}"
-targets = {
-    "GeoLite2-City.mmdb": "/app/GeoLite2-City.mmdb",
-    "GeoLite2-ASN.mmdb": "/app/GeoLite2-ASN.mmdb",
-}
-
-for name, out_path in targets.items():
-    url = f"{base}/{name}"
-    with urlopen(url, timeout=60) as response:
-        content = response.read()
-    Path(out_path).write_bytes(content)
-    print(f"Downloaded {name} from {url}")
-PY
+RUN curl -fsSL -o /app/GeoLite2-City.mmdb \
+        "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb" \
+    && curl -fsSL -o /app/GeoLite2-ASN.mmdb \
+        "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-ASN.mmdb"
 
 COPY app.py .
 
